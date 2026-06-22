@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TETRIS</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Mono:wght@400;700&display=swap');
+
+    :root {
+      --bg:       #111318;
+      --surface:  #1a1c24;
+      --border:   #2a2d3a;
+      --glow-c:   #5ec4d6;
+      --glow-m:   #c96b72;
+      --text:     #d8dae8;
+      --dim:      #5a5c72;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Mono', monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    /* scanline overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,.08) 2px,
+        rgba(0,0,0,.08) 4px
+      );
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    h1 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(16px, 3vw, 24px);
+      letter-spacing: .2em;
+      margin-bottom: 18px;
+      color: #ddeef2;
+      text-shadow:
+        0 0 8px rgba(94,196,214,.6),
+        0 0 24px rgba(94,196,214,.25);
+    }
+
+    #game-wrap {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    /* ── Side panels ── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 14px 12px;
+      width: 120px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .panel-label {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 8px;
+      letter-spacing: .12em;
+      color: #9999bb;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .panel-value {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 13px;
+      color: #ddeef2;
+      word-break: break-all;
+      text-shadow: 0 0 6px rgba(94,196,214,.4);
+    }
+
+    #next-canvas {
+      display: block;
+      margin-top: 4px;
+    }
+
+    /* ── Main board ── */
+    #board-wrap {
+      position: relative;
+    }
+
+    #board {
+      display: block;
+      border: 2px solid var(--border);
+      border-radius: 2px;
+      box-shadow:
+        0 0 0 1px #3a6e78,
+        0 0 20px rgba(94,196,214,.08),
+        inset 0 0 40px rgba(0,0,0,.5);
+    }
+
+    /* ── Overlay screens ── */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(5,5,12,.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      border-radius: 2px;
+    }
+
+    .overlay.hidden { display: none; }
+
+    .overlay h2 {
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(14px, 2.5vw, 20px);
+      color: #ddeef2;
+      text-align: center;
+      line-height: 2;
+      text-shadow: 0 0 10px rgba(94,196,214,.5), 0 0 24px rgba(94,196,214,.2);
+    }
+
+    .overlay p {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      color: #ccccdd;
+      text-align: center;
+      line-height: 2.2;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 4px;
+      padding: 12px 18px;
+    }
+
+    .btn {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 10px;
+      padding: 12px 24px;
+      background: rgba(94,196,214,.08);
+      border: 1px solid #3a7e8a;
+      color: #c8e8ee;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background .15s, box-shadow .15s;
+      letter-spacing: .1em;
+    }
+
+    .btn:hover {
+      background: rgba(94,196,214,.16);
+      box-shadow: 0 0 12px rgba(94,196,214,.3);
+    }
+
+    /* ── Mobile controls ── */
+    #mobile-controls {
+      display: none;
+      margin-top: 14px;
+      gap: 10px;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .ctrl-row { display: flex; gap: 10px; }
+
+    .ctrl-btn {
+      width: 52px; height: 52px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 18px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      transition: background .1s;
+    }
+
+    .ctrl-btn:active { background: var(--border); }
+
+    @media (max-width: 600px) {
+      .panel { width: 80px; padding: 10px 8px; gap: 12px; }
+      .panel-value { font-size: 9px; }
+      #mobile-controls { display: flex; }
+    }
+
+    @media (pointer: coarse) {
+      #mobile-controls { display: flex; }
+    }
+  </style>
+</head>
+<body>
+
+<h1>TETRIS</h1>
+
+<div id="game-wrap">
+  <!-- Left panel -->
+  <div class="panel">
+    <div>
+      <div class="panel-label">Score</div>
+      <div class="panel-value" id="score">0</div>
+    </div>
+    <div>
+      <div class="panel-label">Level</div>
+      <div class="panel-value" id="level">1</div>
+    </div>
+    <div>
+      <div class="panel-label">Lines</div>
+      <div class="panel-value" id="lines">0</div>
+    </div>
+  </div>
+
+  <!-- Board -->
+  <div id="board-wrap">
+    <canvas id="board"></canvas>
+
+    <!-- Start screen -->
+    <div class="overlay" id="start-screen">
+      <h2>TETRIS</h2>
+      <p>← → : 이동<br>↑ / K : 회전<br>↓ : 소프트 드롭<br>Space : 하드 드롭<br>P : 일시정지</p>
+      <button class="btn" id="start-btn">START</button>
+    </div>
+
+    <!-- Pause screen -->
+    <div class="overlay hidden" id="pause-screen">
+      <h2>PAUSE</h2>
+      <button class="btn" id="resume-btn">RESUME</button>
+    </div>
+
+    <!-- Game over screen -->
+    <div class="overlay hidden" id="over-screen">
+      <h2>GAME<br>OVER</h2>
+      <div class="panel-value" id="final-score" style="color:var(--glow-m)"></div>
+      <button class="btn" id="restart-btn">RETRY</button>
+    </div>
+  </div>
+
+  <!-- Right panel -->
+  <div class="panel">
+    <div>
+      <div class="panel-label">Next</div>
+      <canvas id="next-canvas" width="80" height="80"></canvas>
+    </div>
+    <div>
+      <div class="panel-label">Best</div>
+      <div class="panel-value" id="best">0</div>
+    </div>
+  </div>
+</div>
+
+<!-- Mobile controls -->
+<div id="mobile-controls">
+  <div class="ctrl-row">
+    <button class="ctrl-btn" id="btn-rcw"  title="시계방향 회전">↻</button>
+    <button class="ctrl-btn" id="btn-rccw" title="반시계방향 회전">↺</button>
+  </div>
+  <div class="ctrl-row">
+    <button class="ctrl-btn" id="btn-left">◀</button>
+    <button class="ctrl-btn" id="btn-down">▼</button>
+    <button class="ctrl-btn" id="btn-right">▶</button>
+  </div>
+  <div class="ctrl-row">
+    <button class="ctrl-btn" id="btn-drop" style="width:114px;font-size:12px;letter-spacing:.05em">HARD DROP</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  /* ── Constants ── */
+  const COLS = 10, ROWS = 20;
+  const CELL  = Math.min(Math.floor((window.innerHeight * .72) / ROWS), 32);
+  const W = COLS * CELL, H = ROWS * CELL;
+
+  /* ── Piece style table ── */
+  const STYLE = {
+    I: { color: '#5ec4d6', dark: '#2a6e7c', hi: '#a8e4ef' },
+    O: { color: '#d4b84a', dark: '#7a6520', hi: '#edd98a' },
+    T: { color: '#a06cbd', dark: '#563570', hi: '#cda8dc' },
+    S: { color: '#5bb58a', dark: '#2a6349', hi: '#96d4b4' },
+    Z: { color: '#c96b72', dark: '#7a3038', hi: '#e8a5aa' },
+    J: { color: '#5b82c9', dark: '#2a4478', hi: '#96b2e5' },
+    L: { color: '#c98a4a', dark: '#7a4e20', hi: '#e5b882' },
+  };
+  const PIECE_KEYS = Object.keys(STYLE);
+
+  /* ── samtay/tetris relCells: relative coords from origin
+     (origin cell itself = [0,0] is stored separately as ox,oy)
+     coordinate: x = col-offset right, y = row-offset DOWN (screen coords)
+     samtay uses up=+y so we negate y from his definitions ── */
+  const REL = {
+    I: [[-2,0],[-1,0],[1,0]],
+    O: [[-1,0],[-1,1],[0,1]],   // samtay: [[-1,0],[-1,-1],[0,-1]] -> negate y
+    S: [[-1,1],[0,1],[1,0]],    // samtay: [[-1,-1],[0,-1],[1,0]]  -> negate y
+    Z: [[-1,0],[0,1],[1,1]],    // samtay: [[-1,0],[0,-1],[1,-1]]  -> negate y
+    L: [[-1,1],[-1,0],[1,0]],   // samtay: [[-1,-1],[-1,0],[1,0]] -> negate y
+    J: [[-1,0],[1,0],[1,1]],    // samtay: [[-1,0],[1,0],[1,-1]]  -> negate y
+    T: [[-1,0],[0,1],[1,0]],    // samtay: [[-1,0],[0,-1],[1,0]]  -> negate y
+  };
+
+  /* ── samtay rotation math (screen-coord adapted)
+     samtay CCW (LV.perp): (x,y) -> (-y, x)   [in his up=+y world]
+     in screen coords (down=+y), CCW becomes: (x,y) -> (y, -x)
+     samtay CW  (cwperp):  (x,y) -> (y, -x)   [in his up=+y world]
+     in screen coords, CW becomes:  (x,y) -> (-y, x)
+  ── */
+  function rotateCCW([x, y]) { return [ y, -x]; }  // samtay's CCW in screen coords
+  function rotateCW ([x, y]) { return [-y,  x]; }  // samtay's CW  in screen coords
+
+  /* samtay rotateRaw logic:
+     - O: no rotation
+     - I: if currently vertical (any extra cell has x===0), use CW; else CCW
+       "vertical" check: samtay checks if origin+(0,1) is in extra
+       in screen coords that's [0,1] -> any extra cell with x===0 AND y!==0
+     - all others: always CCW
+  */
+  function rotateExtra(key, extra) {
+    if (key === 'O') return extra.map(c => [...c]);
+    if (key === 'I') {
+      // vertical = has a cell directly above/below origin on same column
+      const isVertical = extra.some(([x]) => x === 0);
+      return extra.map(isVertical ? rotateCW : rotateCCW);
+    }
+    return extra.map(rotateCCW);
+  }
+
+  /* ── Canvas setup ── */
+  const boardCanvas = document.getElementById('board');
+  boardCanvas.width  = W;
+  boardCanvas.height = H;
+  const ctx  = boardCanvas.getContext('2d');
+  const nextCanvas = document.getElementById('next-canvas');
+  const nctx = nextCanvas.getContext('2d');
+
+  /* ── UI elements ── */
+  const scoreEl = document.getElementById('score');
+  const levelEl = document.getElementById('level');
+  const linesEl = document.getElementById('lines');
+  const bestEl  = document.getElementById('best');
+  const finalEl = document.getElementById('final-score');
+  const startScr = document.getElementById('start-screen');
+  const pauseScr = document.getElementById('pause-screen');
+  const overScr  = document.getElementById('over-screen');
+
+  /* ── Game state ── */
+  let board, current, next, score, lines, level, best, dropInterval, lastTime, paused, running, rafId;
+
+  function init() {
+    board = Array.from({length: ROWS}, () => Array(COLS).fill(null));
+    score = 0; lines = 0; level = 1;
+    best  = parseInt(localStorage.getItem('tetris_best') || '0');
+    bestEl.textContent = best;
+    current = spawnPiece();
+    next    = spawnPiece();
+    dropInterval = 1000;
+    lastTime = 0; paused = false; running = true;
+    updateUI();
+  }
+
+  /* ── Piece: { key, ox, oy, extra: [[rx,ry],...] }
+     ox/oy = board col/row of origin cell
+     extra = relative offsets of the other 3 cells ── */
+  function spawnPiece() {
+    const key = PIECE_KEYS[Math.floor(Math.random() * PIECE_KEYS.length)];
+    return { key, ox: 4, oy: 0, extra: REL[key].map(c => [...c]) };
+  }
+
+  /* ── All 4 board cells of a piece ── */
+  function cells(p) {
+    return [[0,0], ...p.extra].map(([rx,ry]) => [p.ox+rx, p.oy+ry]);
+  }
+
+  /* ── Collision ── */
+  function validCells(cs) {
+    return cs.every(([x,y]) => x>=0 && x<COLS && y<ROWS && (y<0 || !board[y][x]));
+  }
+  function valid(p) { return validCells(cells(p)); }
+
+  /* ── Move helpers ── */
+  function tryMove(dx, dy) {
+    const c = {...current, ox: current.ox+dx, oy: current.oy+dy};
+    if (valid(c)) { current = c; return true; }
+    return false;
+  }
+
+  /* ── Rotation: samtay wall-kick order: no kick, left(-1), right(+1) ── */
+  function rotate() {
+    const newExtra = rotateExtra(current.key, current.extra);
+    for (const kick of [0, -1, 1]) {
+      const c = {...current, ox: current.ox+kick, extra: newExtra};
+      if (valid(c)) { current = c; return; }
+    }
+  }
+
+  /* ── Ghost ── */
+  function ghostDrop() {
+    let dy = 0;
+    while (validCells(cells({...current, oy: current.oy+dy+1}))) dy++;
+    return dy;
+  }
+
+  /* ── Lock piece ── */
+  function lock() {
+    cells(current).forEach(([x,y]) => { if (y>=0) board[y][x] = current.key; });
+    clearLines();
+    current = next;
+    next = spawnPiece();
+    drawNext();
+    if (!valid(current)) gameOver();
+  }
+
+  /* ── Clear lines ── */
+  const LINE_SCORES = [0, 100, 300, 500, 800];
+  function clearLines() {
+    let cleared = 0;
+    for (let r = ROWS-1; r >= 0; r--) {
+      if (board[r].every(c => c)) {
+        board.splice(r,1);
+        board.unshift(Array(COLS).fill(null));
+        cleared++; r++;
+      }
+    }
+    if (cleared) {
+      lines += cleared;
+      score += LINE_SCORES[cleared] * level;
+      level = Math.floor(lines/10)+1;
+      dropInterval = Math.max(150, 1000-(level-1)*50);
+      updateUI();
+    }
+  }
+
+  /* ── Draw helpers ── */
+  function drawCell(key, x, y, alpha=1) {
+    if (!key) return;
+    const s = STYLE[key];
+    const px = x*CELL, py = y*CELL, cs = CELL-1;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = s.color;
+    ctx.fillRect(px+1, py+1, cs-1, cs-1);
+    ctx.fillStyle = s.hi;
+    ctx.globalAlpha = alpha*0.55;
+    ctx.fillRect(px+2, py+2, cs-4, 3);
+    ctx.fillRect(px+2, py+2, 3, cs-5);
+    ctx.fillStyle = s.dark;
+    ctx.globalAlpha = alpha*0.85;
+    ctx.fillRect(px+cs-2, py+2, 3, cs-2);
+    ctx.fillRect(px+2, py+cs-2, cs-2, 3);
+    ctx.fillStyle = s.hi;
+    ctx.globalAlpha = alpha*0.3;
+    const dot = Math.max(2, CELL/6);
+    ctx.fillRect(px+4, py+4, dot, dot);
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBoard() {
+    ctx.fillStyle = '#14161e';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#1e2030';
+    for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++)
+      if (!board[r][c]) ctx.fillRect(c*CELL+CELL/2-1, r*CELL+CELL/2-1, 2, 2);
+    board.forEach((row,r) => row.forEach((cell,c) => drawCell(cell,c,r)));
+    const dy = ghostDrop();
+    if (dy > 0) cells(current).forEach(([x,y]) => drawCell(current.key,x,y+dy,0.2));
+    cells(current).forEach(([x,y]) => { if(y>=0) drawCell(current.key,x,y); });
+  }
+
+  function drawNext() {
+    nctx.fillStyle = '#14161e';
+    nctx.fillRect(0,0,80,80);
+    const cs = 16;
+    const allRel = [[0,0], ...REL[next.key]];
+    const xs = allRel.map(([x])=>x), ys = allRel.map(([,y])=>y);
+    const minX=Math.min(...xs), minY=Math.min(...ys);
+    const maxX=Math.max(...xs), maxY=Math.max(...ys);
+    const offX = Math.floor((4-(maxX-minX+1))/2)-minX;
+    const offY = Math.floor((4-(maxY-minY+1))/2)-minY;
+    const s = STYLE[next.key];
+    allRel.forEach(([x,y]) => {
+      const px=(x+offX)*cs+8, py=(y+offY)*cs+8;
+      nctx.fillStyle = s.color;
+      nctx.fillRect(px+1,py+1,cs-2,cs-2);
+      nctx.fillStyle = s.hi;
+      nctx.globalAlpha = 0.5;
+      nctx.fillRect(px+2,py+2,cs-4,3);
+      nctx.fillRect(px+2,py+2,3,cs-5);
+      nctx.globalAlpha = 1;
+    });
+  }
+
+  function updateUI() {
+    scoreEl.textContent = score;
+    levelEl.textContent = level;
+    linesEl.textContent = lines;
+    if (score > best) {
+      best = score;
+      bestEl.textContent = best;
+      localStorage.setItem('tetris_best', best);
+    }
+  }
+
+  /* ── Game loop ── */
+  let dropAccum = 0;
+  function loop(ts) {
+    if (!running) return;
+    if (!paused) {
+      const dt = ts - lastTime;
+      dropAccum += dt;
+      if (dropAccum >= dropInterval) {
+        dropAccum = 0;
+        if (!tryMove(0,1)) lock();
+      }
+      drawBoard();
+    }
+    lastTime = ts;
+    rafId = requestAnimationFrame(loop);
+  }
+
+  /* ── Game over ── */
+  function gameOver() {
+    running = false;
+    cancelAnimationFrame(rafId);
+    finalEl.textContent = 'SCORE: ' + score;
+    overScr.classList.remove('hidden');
+  }
+
+  /* ── Controls ── */
+  let softDrop = false;
+  document.addEventListener('keydown', e => {
+    if (!running) return;
+    if (e.key==='p'||e.key==='P') { togglePause(); return; }
+    if (paused) return;
+    switch (e.key) {
+      case 'ArrowLeft':  e.preventDefault(); tryMove(-1,0); break;
+      case 'ArrowRight': e.preventDefault(); tryMove( 1,0); break;
+      case 'ArrowDown':
+        e.preventDefault();
+        if (!softDrop) softDrop = true;
+        if (tryMove(0,1)) { score+=1; updateUI(); }
+        break;
+      // samtay: single rotate key = ↑ or k -> CCW (same as samtay's rotate)
+      case 'ArrowUp': case 'k': case 'K':
+        e.preventDefault(); rotate(); break;
+      case ' ': e.preventDefault(); hardDrop(); break;
+    }
+  });
+  document.addEventListener('keyup', e => {
+    if (e.key==='ArrowDown') {
+      softDrop = false; dropAccum = 0;
+      dropInterval = Math.max(150, 1000-(level-1)*50);
+    }
+  });
+
+  function hardDrop() {
+    const dy = ghostDrop();
+    score += dy*2;
+    current = {...current, oy: current.oy+dy};
+    lock();
+    updateUI();
+  }
+
+  function togglePause() {
+    if (!running) return;
+    paused = !paused;
+    pauseScr.classList.toggle('hidden', !paused);
+    if (!paused) { lastTime = performance.now(); dropAccum = 0; }
+  }
+
+  /* ── Mobile buttons ── */
+  function mobileAction(action) {
+    if (!running || paused) return;
+    switch (action) {
+      case 'left':   tryMove(-1,0); break;
+      case 'right':  tryMove( 1,0); break;
+      case 'down':   if (tryMove(0,1)) { score+=1; updateUI(); } break;
+      case 'rotate': rotate(); break;
+      case 'drop':   hardDrop(); break;
+    }
+  }
+
+  [
+    ['btn-left',  'left'],
+    ['btn-right', 'right'],
+    ['btn-down',  'down'],
+    ['btn-rcw',   'rotate'],
+    ['btn-rccw',  'rotate'],
+    ['btn-drop',  'drop'],
+  ].forEach(([id, action]) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener('touchstart', e => { e.preventDefault(); mobileAction(action); }, {passive:false});
+    btn.addEventListener('mousedown',  () => mobileAction(action));
+  });
+
+  /* ── Button wiring ── */
+  document.getElementById('start-btn').addEventListener('click', () => {
+    startScr.classList.add('hidden');
+    init(); drawNext();
+    rafId = requestAnimationFrame(loop);
+  });
+  document.getElementById('resume-btn').addEventListener('click', togglePause);
+  document.getElementById('restart-btn').addEventListener('click', () => {
+    overScr.classList.add('hidden');
+    init(); drawNext();
+    rafId = requestAnimationFrame(loop);
+  });
+
+  bestEl.textContent = localStorage.getItem('tetris_best') || '0';
+  ctx.fillStyle = '#14161e';
+  ctx.fillRect(0, 0, W, H);
+})();
+</script>
+
+</body>
+</html>
